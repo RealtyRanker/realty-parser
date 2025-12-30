@@ -1,0 +1,121 @@
+components_manager:
+    task_processors:                  # Task processor is an executor for coroutine tasks
+
+        main-task-processor:          # Make a task processor for CPU-bound couroutine tasks.
+            worker_threads: 4         # Process tasks in 4 threads.
+
+        fs-task-processor:            # Make a separate task processor for filesystem bound tasks.
+            worker_threads: 2
+
+        monitor-task-processor:
+            thread_name: mon-worker
+            worker_threads: $monitor_worker_threads
+            worker_threads#fallback: 1
+
+    default_task_processor: main-task-processor
+
+    components:
+        latest-flats-listener-component: 
+            task_period_seconds: 90
+            request_timeout: 5000
+            sleep_before_request: 30000
+            sleep_timeout: 10000
+            sleep_multiplier: 1.5
+            debug_logs: true
+            cookie_header: _CIAN_GK=20672fe9-55b5-4ee1-b9fc-f4abdee21893; __cf_bm=CriI200WyMaz.4npX9O9ml364EGvDUZ0tdH8UsnoGq4-1742301652-1.0.1.1-5A7KNouZTT0rOiJ4W8EnuAbEInc9TsFia7LkXQJlC5g0Q.mfXZ7eXRVN4kA30pEDKmLBnyaOgbjoLqQmbnnjus6OpFBsTb0HokzaiuRljJw
+            max_tries: 5
+            task_mode: actual_flats
+            search_params:
+                min_price: 50000
+                max_price: 85000
+                min_area: 38
+                max_area: 0
+                sort: creation_date_desc
+                room1: 0
+                room2: 1
+                room3: 1
+                room4: 1
+                room5: 0
+                room6: 0
+                pages_limit: 1
+                limit: 100
+                overall_limit: 20
+        statistics-component: {}
+        telegram-bot-component:
+            bot_token: 6697778482:AAGLpW7jaU9SSkT1jytRXiqhjlfqcVcRbdg
+        s3-component:
+            storage_domain: s3.yandexcloud.net
+            storage_access_key: YCAJE7_ZlRFW3QzapC5DM94xV
+            storage_secret_key: YCO1GmNGcZ32QFx4EhBiecXt0hp8NqA_VeSCfzeU
+            bucket_name: test-bucket-andrew-misnik
+        server:
+            listener:
+                port: 8080
+                task_processor: main-task-processor
+            listener-monitor:
+                port: $monitor-server-port
+                port#fallback: 8086
+                connection:
+                    in_buffer_size: 32768
+                    requests_queue_size_threshold: 100
+                task_processor: main-task-processor
+        logging:
+            fs-task-processor: fs-task-processor
+            loggers:
+                default:
+                    file_path: /home/andrew-misnik/realty-parser/logs
+                    level: info
+                    overflow_behavior: discard
+
+        dynamic-config:
+            defaults:
+                HTTP_CLIENT_CONNECTION_POOL_SIZE: 1000
+                POSTGRES_DEFAULT_COMMAND_CONTROL:
+                    network_timeout_ms: 750
+                    statement_timeout_ms: 500
+
+        http-client:
+            load-enabled: true
+            fs-task-processor: fs-task-processor
+            destination-metrics-auto-max-size: 100000
+        testsuite-support: {}
+        tests-control:
+            load-enabled: false
+            path: /tests/{action}
+            method: POST
+            task_processor: main-task-processor
+        handler-ping:
+            path: /ping
+            method: GET
+            task_processor: main-task-processor
+            throttling_enabled: false
+            url_trailing_slash: strict-match
+
+        hello-handler:
+            path: /v1/hello
+            method: POST
+            task_processor: main-task-processor
+            parse_args_from_body: true
+        
+        flats-history-handler:
+            path: /v1/flats_history
+            method: POST
+            task_processor: main-task-processor
+            parse_args_from_body: true
+
+        handler-server-monitor:
+            path: /service/monitor
+            method: GET
+            task_processor: monitor-task-processor
+            format: json
+
+        postgres-db:
+            dbconnection: 'postgresql://userver:realty-parser@rc1b-g6eqg2ke29xcb8s1.mdb.yandexcloud.net:6432/userver'
+            dbconnection#env: DB_CONNECTION
+            blocking_task_processor: fs-task-processor
+            dns_resolver: async
+            sync-start: false
+            connlimit_mode: manual
+
+        dns-client:
+            fs-task-processor: fs-task-processor

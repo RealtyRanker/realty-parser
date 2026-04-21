@@ -1,0 +1,34 @@
+search:
+  min_price: 50000
+  max_price: 85000
+  min_area: 38
+  max_area: 0
+  sort: "creation_date_desc"
+  rooms: [2, 3, 4]   # 1=studio 2=1-room 3=2-room 4=3-room 5=4-room 6=5+room
+  pages_limit: 1
+  limit: 100
+  overall_limit: 20
+
+worker:
+  period_seconds: 10
+  request_timeout_ms: 5000
+  sleep_before_request_ms: 30000
+  retry_sleep_ms: 10000
+  retry_sleep_multiplier: 1.5
+  max_retries: 5
+  cookie_header: ""
+
+database:
+  dsn: "postgres://realty_parser:password@realty-postgres:5432/realty_parser?sslmode=disable"
+
+logging:
+  file_path: "/var/log/realty-parser/app.log"
+  level: "debug"
+
+metrics:
+  port: 9090
+
+kafka:
+  brokers:
+    - "realty-kafka:9092"
+  topic: "realty.flats"

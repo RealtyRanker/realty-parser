@@ -1,0 +1,9 @@
+FROM postgres:16-alpine
+
+ENV POSTGRES_USER=realty_parser
+ENV POSTGRES_PASSWORD=password
+ENV POSTGRES_DB=realty_parser
+
+COPY migrations/*.sql /docker-entrypoint-initdb.d/
+
+EXPOSE 5432

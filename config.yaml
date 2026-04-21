@@ -1,19 +1,19 @@
 search:
-  min_price: 50000
-  max_price: 85000
-  min_area: 38
+  min_price: 1000
+  max_price: 3000000
+  min_area: 0
   max_area: 0
   sort: "creation_date_desc"
-  rooms: [2, 3, 4]   # 1=studio 2=1-room 3=2-room 4=3-room 5=4-room 6=5+room
+  rooms: [1, 2, 3, 4, 5, 6]   # 1=studio 2=1-room 3=2-room 4=3-room 5=4-room 6=5+room
   pages_limit: 1
   limit: 100
-  overall_limit: 20
+  overall_limit: 30
 
 worker:
-  period_seconds: 10
+  period_seconds: 5
   request_timeout_ms: 5000
-  sleep_before_request_ms: 30000
-  retry_sleep_ms: 10000
+  sleep_before_request_ms: 2000
+  retry_sleep_ms: 5000
   retry_sleep_multiplier: 1.5
   max_retries: 5
   cookie_header: ""

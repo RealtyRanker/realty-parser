@@ -3,7 +3,6 @@ package cian
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	"go.uber.org/zap"
@@ -19,12 +18,6 @@ const cianConfigPrefix = "window._cianConfig['frontend-offer-card'] = (window._c
 // Every other LinkArea node is skipped (mirrors original C++ logic).
 func ParseSearchPageHrefs(body string, logger *zap.Logger) ([]string, error) {
 	logger.Debug("search page received", zap.Int("body_bytes", len(body)))
-	if logger.Core().Enabled(zap.DebugLevel) {
-		const dumpPath = "/var/log/realty-parser/cian_search_debug.html"
-		if err := os.WriteFile(dumpPath, []byte(body), 0o644); err == nil {
-			logger.Debug("search page body dumped", zap.String("path", dumpPath))
-		}
-	}
 
 	// Quick sanity check — bot-wall or empty response
 	if len(body) < 1000 {

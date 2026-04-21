@@ -20,7 +20,7 @@ docker run -d \
   --name "$APP_CONTAINER" \
   --network "$NETWORK" \
   --restart unless-stopped \
-  -p 9090:9090 \
+  -p 9095:9095 \
   -v "$(pwd)/config.yaml:/app/config.yaml:ro" \
   -v "$LOG_DIR:/var/log/realty-parser" \
   "$APP_IMAGE"
@@ -28,6 +28,6 @@ docker run -d \
 echo ""
 echo "Useful commands:"
 echo "  Logs:    docker logs -f $APP_CONTAINER"
-echo "  Metrics: curl http://localhost:9090/metrics"
-echo "  Health:  curl http://localhost:9090/healthz"
+echo "  Metrics: curl http://localhost:9095/metrics"
+echo "  Health:  curl http://localhost:9095/healthz"
 echo "  Stop:    docker stop $APP_CONTAINER"

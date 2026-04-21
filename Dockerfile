@@ -18,6 +18,6 @@ WORKDIR /app
 COPY --from=builder /realty-parser .
 COPY config.yaml .
 
-EXPOSE 9090
+EXPOSE 9095
 
 CMD ["./realty-parser", "-config", "config.yaml"]

@@ -44,7 +44,7 @@ logging:
   level: "debug"   # debug / info / warn / error
 
 metrics:
-  port: 9090
+  port: 9095
 ```
 
 ## Метрики и здоровье
@@ -52,8 +52,8 @@ metrics:
 После запуска доступны:
 
 ```
-GET http://localhost:9090/healthz   # health check
-GET http://localhost:9090/metrics   # Prometheus метрики
+GET http://localhost:9095/healthz   # health check
+GET http://localhost:9095/metrics   # Prometheus метрики
 ```
 
 ---

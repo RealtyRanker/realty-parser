@@ -60,47 +60,7 @@ GET http://localhost:9095/metrics   # Prometheus метрики
 
 ## Запуск в Docker
 
-Все компоненты запускаются в отдельных контейнерах в рамках общей Docker-сети `realty-net`. Порядок запуска: PostgreSQL → Kafka → сервис.
-
-### 1. PostgreSQL
-
-```bash
-bash psql_setup.sh
-```
-
-Поднимает контейнер `realty-postgres`, применяет все миграции из папки `migrations/` и ждёт готовности БД.
-
-```
-# Подключиться к БД:
-docker exec -it realty-postgres psql -U realty_parser -d realty_parser
-
-# Остановить:
-docker stop realty-postgres
-```
-
-### 2. Kafka
-
-```bash
-bash kafka_setup.sh
-```
-
-Поднимает контейнер `realty-kafka` в KRaft-режиме (без Zookeeper) и создаёт топик `realty.flats`.
-
-```
-# Список топиков:
-docker exec realty-kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
-
-# Читать сообщения из топика:
-docker exec realty-kafka /opt/kafka/bin/kafka-console-consumer.sh \
-  --bootstrap-server localhost:9092 \
-  --topic realty.flats \
-  --from-beginning
-
-# Остановить:
-docker stop realty-kafka
-```
-
-### 3. Сервис
+Сервис запускается в контейнере в рамках общей Docker-сети `realty-net`. PostgreSQL и Kafka должны быть уже подняты — см. инструкцию в `dev-tips/`.
 
 ```bash
 bash server_setup.sh

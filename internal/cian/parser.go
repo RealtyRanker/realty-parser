@@ -14,6 +14,10 @@ import (
 
 const cianConfigPrefix = "window._cianConfig['frontend-offer-card'] = (window._cianConfig['frontend-offer-card'] || []).concat("
 
+// moscowRegionID is the CIAN region id for Moscow, the only region the
+// underground (metro) station ranking data in the scoring package covers.
+const moscowRegionID = 1
+
 // ParseSearchPageHrefs extracts flat listing URLs from a CIAN search results page.
 // Every other LinkArea node is skipped (mirrors original C++ logic).
 func ParseSearchPageHrefs(body string, logger *zap.Logger) ([]string, error) {
@@ -142,7 +146,7 @@ func extractHref(n *html.Node) string {
 }
 
 // ParseFlatPage extracts FlatInfo from a CIAN flat detail page HTML body.
-func ParseFlatPage(body, href string, logger *zap.Logger) (*model.FlatInfo, error) {
+func ParseFlatPage(body, href string, region int, logger *zap.Logger) (*model.FlatInfo, error) {
 	logger.Debug("flat page received", zap.String("href", href), zap.Int("body_bytes", len(body)))
 
 	idx := strings.Index(body, "window._cianConfig['frontend-offer-card']")
@@ -165,7 +169,7 @@ func ParseFlatPage(body, href string, logger *zap.Logger) (*model.FlatInfo, erro
 	line = strings.TrimRight(line, "\r")
 	logger.Debug("offer card line extracted", zap.String("href", href), zap.Int("line_bytes", len(line)))
 
-	info, err := parseOfferCardLine(line, href)
+	info, err := parseOfferCardLine(line, href, region)
 	if err != nil {
 		logger.Warn("offer card line parse failed", zap.String("href", href), zap.Error(err))
 		return nil, err
@@ -180,7 +184,7 @@ func ParseFlatPage(body, href string, logger *zap.Logger) (*model.FlatInfo, erro
 	return info, nil
 }
 
-func parseOfferCardLine(line, href string) (*model.FlatInfo, error) {
+func parseOfferCardLine(line, href string, region int) (*model.FlatInfo, error) {
 	if len(line) < len(cianConfigPrefix)+2 {
 		return nil, fmt.Errorf("offer card line too short (%d bytes)", len(line))
 	}
@@ -201,12 +205,12 @@ func parseOfferCardLine(line, href string) (*model.FlatInfo, error) {
 		if err := json.Unmarshal(obj["key"], &key); err != nil || key != "defaultState" {
 			continue
 		}
-		return parseDefaultState(obj["value"], href)
+		return parseDefaultState(obj["value"], href, region)
 	}
 	return nil, fmt.Errorf("defaultState key not found in offer card")
 }
 
-func parseDefaultState(valueRaw json.RawMessage, href string) (*model.FlatInfo, error) {
+func parseDefaultState(valueRaw json.RawMessage, href string, region int) (*model.FlatInfo, error) {
 	var state map[string]json.RawMessage
 	if err := json.Unmarshal(valueRaw, &state); err != nil {
 		return nil, fmt.Errorf("unmarshalling defaultState: %w", err)
@@ -218,13 +222,21 @@ func parseDefaultState(valueRaw json.RawMessage, href string) (*model.FlatInfo, 
 	houseData := nestedMap(bti, "houseData")
 	bargainTerms := nestedMap(offer, "bargainTerms")
 	building := nestedMap(offer, "building")
-	geo := nestedMap(offer, "geo")
-	undergroundsRaw := jsonArray(geo, "undergrounds")
 
-	undergroundScore, undergroundPlace, undergroundDistInfo := scoring.ParseUndergroundInfo(undergroundsRaw)
+	// The underground (metro) ranking data only covers Moscow; skip it for
+	// other regions instead of scoring against Moscow-only station data.
+	var undergroundScore float64
+	var undergroundPlace int
+	var undergroundDistInfo string
+	if region == moscowRegionID {
+		geo := nestedMap(offer, "geo")
+		undergroundsRaw := jsonArray(geo, "undergrounds")
+		undergroundScore, undergroundPlace, undergroundDistInfo = scoring.ParseUndergroundInfo(undergroundsRaw)
+	}
 
 	info := &model.FlatInfo{
 		Link:                     href,
+		Region:                   region,
 		Price:                    jsonInt(bargainTerms, "price"),
 		RoomNumber:               jsonInt(offer, "roomsCount"),
 		TotalArea:                jsonFloat(offer, "totalArea"),

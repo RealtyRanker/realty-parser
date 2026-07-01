@@ -86,17 +86,37 @@ func (w *Worker) runOnce(ctx context.Context) {
 	)
 }
 
+// defaultRegion is used when no active subscriptions exist yet (e.g. on a fresh deployment).
+const defaultRegion = 1 // Москва
+
 func (w *Worker) doRun(ctx context.Context) int {
+	regions, err := w.db.GetDistinctRegions(ctx)
+	if err != nil {
+		w.logger.Error("fetching distinct regions failed", zap.Error(err))
+		return 0
+	}
+	if len(regions) == 0 {
+		regions = []int{defaultRegion}
+	}
+
+	parsed := 0
+	for _, region := range regions {
+		parsed += w.runRegion(ctx, region)
+	}
+	return parsed
+}
+
+func (w *Worker) runRegion(ctx context.Context, region int) int {
 	cfg := w.cfg.Search
 	parsed := 0
 
 	for page := 1; parsed < cfg.OverallLimit && page <= cfg.PagesLimit; page++ {
-		searchURL := cian.BuildSearchURL(cfg, page)
-		w.logger.Debug("fetching search page", zap.String("url", searchURL))
+		searchURL := cian.BuildSearchURL(cfg, region, page)
+		w.logger.Debug("fetching search page", zap.Int("region", region), zap.String("url", searchURL))
 
 		body, err := w.fetchURL(ctx, searchURL, "https://www.cian.ru/")
 		if err != nil {
-			w.logger.Error("search page fetch failed", zap.Int("page", page), zap.Error(err))
+			w.logger.Error("search page fetch failed", zap.Int("region", region), zap.Int("page", page), zap.Error(err))
 			metrics.FetchErrors.Inc()
 			continue
 		}
@@ -104,18 +124,18 @@ func (w *Worker) doRun(ctx context.Context) int {
 
 		hrefs, err := cian.ParseSearchPageHrefs(body, w.logger)
 		if err != nil {
-			w.logger.Error("search page parse failed", zap.Int("page", page), zap.Error(err))
+			w.logger.Error("search page parse failed", zap.Int("region", region), zap.Int("page", page), zap.Error(err))
 			metrics.ParseErrors.Inc()
 			continue
 		}
-		w.logger.Info("found flats on search page", zap.Int("page", page), zap.Int("count", len(hrefs)))
+		w.logger.Info("found flats on search page", zap.Int("region", region), zap.Int("page", page), zap.Int("count", len(hrefs)))
 		metrics.FlatsFound.Add(float64(len(hrefs)))
 
 		for _, href := range hrefs {
 			if parsed >= cfg.OverallLimit {
 				break
 			}
-			if err := w.processFlat(ctx, href); err != nil {
+			if err := w.processFlat(ctx, href, region); err != nil {
 				w.logger.Warn("skipping flat", zap.String("href", href), zap.Error(err))
 				continue
 			}
@@ -125,7 +145,7 @@ func (w *Worker) doRun(ctx context.Context) int {
 	return parsed
 }
 
-func (w *Worker) processFlat(ctx context.Context, href string) error {
+func (w *Worker) processFlat(ctx context.Context, href string, region int) error {
 	exists, err := w.db.FlatExists(ctx, href)
 	if err != nil {
 		return fmt.Errorf("db exists check: %w", err)
@@ -135,7 +155,7 @@ func (w *Worker) processFlat(ctx context.Context, href string) error {
 		return nil
 	}
 
-	info, err := w.fetchAndParseFlatWithRetry(ctx, href)
+	info, err := w.fetchAndParseFlatWithRetry(ctx, href, region)
 	if err != nil {
 		metrics.ParseErrors.Inc()
 		return err
@@ -165,7 +185,7 @@ func (w *Worker) processFlat(ctx context.Context, href string) error {
 	return nil
 }
 
-func (w *Worker) fetchAndParseFlatWithRetry(ctx context.Context, href string) (*model.FlatInfo, error) {
+func (w *Worker) fetchAndParseFlatWithRetry(ctx context.Context, href string, region int) (*model.FlatInfo, error) {
 	time.Sleep(time.Duration(w.cfg.Worker.SleepBeforeRequestMs) * time.Millisecond)
 
 	sleepMs := float64(w.cfg.Worker.RetrySleepMs)
@@ -177,7 +197,7 @@ func (w *Worker) fetchAndParseFlatWithRetry(ctx context.Context, href string) (*
 			sleepMs *= w.cfg.Worker.RetrySleepMultiplier
 		}
 
-		body, err := w.fetchURL(ctx, href, cian.BuildSearchURL(w.cfg.Search, 1))
+		body, err := w.fetchURL(ctx, href, cian.BuildSearchURL(w.cfg.Search, region, 1))
 		if err != nil {
 			lastErr = err
 			metrics.FetchErrors.Inc()
@@ -190,7 +210,7 @@ func (w *Worker) fetchAndParseFlatWithRetry(ctx context.Context, href string) (*
 			continue
 		}
 
-		info, err := cian.ParseFlatPage(body, href, w.logger)
+		info, err := cian.ParseFlatPage(body, href, region, w.logger)
 		if err != nil {
 			lastErr = err
 			w.logger.Warn("flat parse error", zap.String("href", href), zap.Int("try", try), zap.Error(err))

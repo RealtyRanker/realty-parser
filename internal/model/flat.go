@@ -2,6 +2,7 @@ package model
 
 type FlatInfo struct {
 	Link                     string
+	Region                   int
 	Price                    int
 	FlatScore                int
 	UndergroundScore         float64

@@ -7,12 +7,13 @@ import (
 	"github.com/asmisnik/realty-parser/internal/config"
 )
 
-const baseSearchURL = "https://www.cian.ru/cat.php?deal_type=rent&engine_version=2&offer_type=flat&region=1&type=4"
+const baseSearchURL = "https://www.cian.ru/cat.php?deal_type=rent&engine_version=2&offer_type=flat&type=4"
 
-// BuildSearchURL constructs a CIAN search URL from the given filter config and page number.
-func BuildSearchURL(cfg config.SearchConfig, page int) string {
+// BuildSearchURL constructs a CIAN search URL from the given filter config, region id and page number.
+func BuildSearchURL(cfg config.SearchConfig, region, page int) string {
 	var sb strings.Builder
 	sb.WriteString(baseSearchURL)
+	sb.WriteString(fmt.Sprintf("&region=%d", region))
 	addIntParam(&sb, "minprice", cfg.MinPrice)
 	addIntParam(&sb, "maxprice", cfg.MaxPrice)
 	addIntParam(&sb, "minarea", cfg.MinArea)

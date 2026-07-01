@@ -1,6 +1,6 @@
 search:
   min_price: 1000
-  max_price: 3000000
+  max_price: 900000000
   min_area: 0
   max_area: 0
   sort: "creation_date_desc"

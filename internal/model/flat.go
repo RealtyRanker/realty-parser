@@ -3,6 +3,7 @@ package model
 type FlatInfo struct {
 	Link                     string
 	Region                   int
+	DealType                 string
 	Price                    int
 	FlatScore                int
 	UndergroundScore         float64
@@ -33,4 +34,12 @@ type FlatInfo struct {
 	BuildingEntrancesNumber  int
 	BuildingApartmentsNumber int
 	BuildingElevatorsNumber  int
+
+	// Sale-only fields (zero-valued for rent listings).
+	SaleType                  string // "free" (свободная продажа) or "alternative" (альтернативная)
+	MortgageAllowed           bool
+	IsNewBuilding             bool
+	NewBuildingName           string
+	IsByHomeowner             bool
+	DemolishedInMoscowProgram bool
 }

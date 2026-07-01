@@ -146,7 +146,7 @@ func extractHref(n *html.Node) string {
 }
 
 // ParseFlatPage extracts FlatInfo from a CIAN flat detail page HTML body.
-func ParseFlatPage(body, href string, region int, logger *zap.Logger) (*model.FlatInfo, error) {
+func ParseFlatPage(body, href string, region int, dealType string, logger *zap.Logger) (*model.FlatInfo, error) {
 	logger.Debug("flat page received", zap.String("href", href), zap.Int("body_bytes", len(body)))
 
 	idx := strings.Index(body, "window._cianConfig['frontend-offer-card']")
@@ -169,7 +169,7 @@ func ParseFlatPage(body, href string, region int, logger *zap.Logger) (*model.Fl
 	line = strings.TrimRight(line, "\r")
 	logger.Debug("offer card line extracted", zap.String("href", href), zap.Int("line_bytes", len(line)))
 
-	info, err := parseOfferCardLine(line, href, region)
+	info, err := parseOfferCardLine(line, href, region, dealType)
 	if err != nil {
 		logger.Warn("offer card line parse failed", zap.String("href", href), zap.Error(err))
 		return nil, err
@@ -184,7 +184,7 @@ func ParseFlatPage(body, href string, region int, logger *zap.Logger) (*model.Fl
 	return info, nil
 }
 
-func parseOfferCardLine(line, href string, region int) (*model.FlatInfo, error) {
+func parseOfferCardLine(line, href string, region int, dealType string) (*model.FlatInfo, error) {
 	if len(line) < len(cianConfigPrefix)+2 {
 		return nil, fmt.Errorf("offer card line too short (%d bytes)", len(line))
 	}
@@ -205,12 +205,12 @@ func parseOfferCardLine(line, href string, region int) (*model.FlatInfo, error) 
 		if err := json.Unmarshal(obj["key"], &key); err != nil || key != "defaultState" {
 			continue
 		}
-		return parseDefaultState(obj["value"], href, region)
+		return parseDefaultState(obj["value"], href, region, dealType)
 	}
 	return nil, fmt.Errorf("defaultState key not found in offer card")
 }
 
-func parseDefaultState(valueRaw json.RawMessage, href string, region int) (*model.FlatInfo, error) {
+func parseDefaultState(valueRaw json.RawMessage, href string, region int, dealType string) (*model.FlatInfo, error) {
 	var state map[string]json.RawMessage
 	if err := json.Unmarshal(valueRaw, &state); err != nil {
 		return nil, fmt.Errorf("unmarshalling defaultState: %w", err)
@@ -222,6 +222,17 @@ func parseDefaultState(valueRaw json.RawMessage, href string, region int) (*mode
 	houseData := nestedMap(bti, "houseData")
 	bargainTerms := nestedMap(offer, "bargainTerms")
 	building := nestedMap(offer, "building")
+
+	newbuilding := nestedMap(offer, "newbuilding")
+
+	// Comission represents the agent's percentage fee for both deal types,
+	// but CIAN structures it differently: a flat "agentFee" for rent vs a
+	// nested "agentBonus": {paymentType, value} object for sale.
+	comission := jsonInt(bargainTerms, "agentFee")
+	if dealType == "sale" {
+		agentBonus := nestedMap(bargainTerms, "agentBonus")
+		comission = jsonInt(agentBonus, "value")
+	}
 
 	// The underground (metro) ranking data only covers Moscow; skip it for
 	// other regions instead of scoring against Moscow-only station data.
@@ -237,6 +248,7 @@ func parseDefaultState(valueRaw json.RawMessage, href string, region int) (*mode
 	info := &model.FlatInfo{
 		Link:                     href,
 		Region:                   region,
+		DealType:                 dealType,
 		Price:                    jsonInt(bargainTerms, "price"),
 		RoomNumber:               jsonInt(offer, "roomsCount"),
 		TotalArea:                jsonFloat(offer, "totalArea"),
@@ -244,7 +256,7 @@ func parseDefaultState(valueRaw json.RawMessage, href string, region int) (*mode
 		KitchenArea:              jsonFloat(offer, "kitchenArea"),
 		Floor:                    jsonInt(offer, "floorNumber"),
 		MaxFloor:                 jsonInt(building, "floorsCount"),
-		Comission:                jsonInt(bargainTerms, "agentFee"),
+		Comission:                comission,
 		Deposit:                  jsonInt(bargainTerms, "deposit"),
 		DepositMonths:            jsonInt(bargainTerms, "prepayMonths"),
 		Renovation:               jsonString(offer, "repairType"),
@@ -266,6 +278,13 @@ func parseDefaultState(valueRaw json.RawMessage, href string, region int) (*mode
 		UndergroundScore:         undergroundScore,
 		UndergroundPlace:         undergroundPlace,
 		UndergroundDistanceInfo:  undergroundDistInfo,
+
+		SaleType:                  jsonString(bargainTerms, "saleType"),
+		MortgageAllowed:           jsonBool(bargainTerms, "mortgageAllowed"),
+		IsNewBuilding:             jsonInt(newbuilding, "id") != 0,
+		NewBuildingName:           jsonString(newbuilding, "name"),
+		IsByHomeowner:             jsonBool(offer, "isByHomeowner"),
+		DemolishedInMoscowProgram: jsonBool(offer, "demolishedInMoscowProgramm"),
 	}
 	info.FlatScore = scoring.CalculateFlatScore(info)
 	return info, nil

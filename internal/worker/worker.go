@@ -86,37 +86,37 @@ func (w *Worker) runOnce(ctx context.Context) {
 	)
 }
 
-// defaultRegion is used when no active subscriptions exist yet (e.g. on a fresh deployment).
-const defaultRegion = 1 // Москва
+// defaultRegionDealType is used when no active subscriptions exist yet (e.g. on a fresh deployment).
+var defaultRegionDealType = db.RegionDealType{Region: 1, DealType: cian.DealTypeRent} // Москва, аренда
 
 func (w *Worker) doRun(ctx context.Context) int {
-	regions, err := w.db.GetDistinctRegions(ctx)
+	combos, err := w.db.GetDistinctRegionDealTypes(ctx)
 	if err != nil {
-		w.logger.Error("fetching distinct regions failed", zap.Error(err))
+		w.logger.Error("fetching distinct region/deal_type combinations failed", zap.Error(err))
 		return 0
 	}
-	if len(regions) == 0 {
-		regions = []int{defaultRegion}
+	if len(combos) == 0 {
+		combos = []db.RegionDealType{defaultRegionDealType}
 	}
 
 	parsed := 0
-	for _, region := range regions {
-		parsed += w.runRegion(ctx, region)
+	for _, combo := range combos {
+		parsed += w.runSearch(ctx, combo.Region, combo.DealType)
 	}
 	return parsed
 }
 
-func (w *Worker) runRegion(ctx context.Context, region int) int {
+func (w *Worker) runSearch(ctx context.Context, region int, dealType string) int {
 	cfg := w.cfg.Search
 	parsed := 0
 
 	for page := 1; parsed < cfg.OverallLimit && page <= cfg.PagesLimit; page++ {
-		searchURL := cian.BuildSearchURL(cfg, region, page)
-		w.logger.Debug("fetching search page", zap.Int("region", region), zap.String("url", searchURL))
+		searchURL := cian.BuildSearchURL(cfg, region, dealType, page)
+		w.logger.Debug("fetching search page", zap.Int("region", region), zap.String("deal_type", dealType), zap.String("url", searchURL))
 
 		body, err := w.fetchURL(ctx, searchURL, "https://www.cian.ru/")
 		if err != nil {
-			w.logger.Error("search page fetch failed", zap.Int("region", region), zap.Int("page", page), zap.Error(err))
+			w.logger.Error("search page fetch failed", zap.Int("region", region), zap.String("deal_type", dealType), zap.Int("page", page), zap.Error(err))
 			metrics.FetchErrors.Inc()
 			continue
 		}
@@ -124,18 +124,18 @@ func (w *Worker) runRegion(ctx context.Context, region int) int {
 
 		hrefs, err := cian.ParseSearchPageHrefs(body, w.logger)
 		if err != nil {
-			w.logger.Error("search page parse failed", zap.Int("region", region), zap.Int("page", page), zap.Error(err))
+			w.logger.Error("search page parse failed", zap.Int("region", region), zap.String("deal_type", dealType), zap.Int("page", page), zap.Error(err))
 			metrics.ParseErrors.Inc()
 			continue
 		}
-		w.logger.Info("found flats on search page", zap.Int("region", region), zap.Int("page", page), zap.Int("count", len(hrefs)))
+		w.logger.Info("found flats on search page", zap.Int("region", region), zap.String("deal_type", dealType), zap.Int("page", page), zap.Int("count", len(hrefs)))
 		metrics.FlatsFound.Add(float64(len(hrefs)))
 
 		for _, href := range hrefs {
 			if parsed >= cfg.OverallLimit {
 				break
 			}
-			if err := w.processFlat(ctx, href, region); err != nil {
+			if err := w.processFlat(ctx, href, region, dealType); err != nil {
 				w.logger.Warn("skipping flat", zap.String("href", href), zap.Error(err))
 				continue
 			}
@@ -145,7 +145,7 @@ func (w *Worker) runRegion(ctx context.Context, region int) int {
 	return parsed
 }
 
-func (w *Worker) processFlat(ctx context.Context, href string, region int) error {
+func (w *Worker) processFlat(ctx context.Context, href string, region int, dealType string) error {
 	exists, err := w.db.FlatExists(ctx, href)
 	if err != nil {
 		return fmt.Errorf("db exists check: %w", err)
@@ -155,7 +155,7 @@ func (w *Worker) processFlat(ctx context.Context, href string, region int) error
 		return nil
 	}
 
-	info, err := w.fetchAndParseFlatWithRetry(ctx, href, region)
+	info, err := w.fetchAndParseFlatWithRetry(ctx, href, region, dealType)
 	if err != nil {
 		metrics.ParseErrors.Inc()
 		return err
@@ -185,7 +185,7 @@ func (w *Worker) processFlat(ctx context.Context, href string, region int) error
 	return nil
 }
 
-func (w *Worker) fetchAndParseFlatWithRetry(ctx context.Context, href string, region int) (*model.FlatInfo, error) {
+func (w *Worker) fetchAndParseFlatWithRetry(ctx context.Context, href string, region int, dealType string) (*model.FlatInfo, error) {
 	time.Sleep(time.Duration(w.cfg.Worker.SleepBeforeRequestMs) * time.Millisecond)
 
 	sleepMs := float64(w.cfg.Worker.RetrySleepMs)
@@ -197,7 +197,7 @@ func (w *Worker) fetchAndParseFlatWithRetry(ctx context.Context, href string, re
 			sleepMs *= w.cfg.Worker.RetrySleepMultiplier
 		}
 
-		body, err := w.fetchURL(ctx, href, cian.BuildSearchURL(w.cfg.Search, region, 1))
+		body, err := w.fetchURL(ctx, href, cian.BuildSearchURL(w.cfg.Search, region, dealType, 1))
 		if err != nil {
 			lastErr = err
 			metrics.FetchErrors.Inc()
@@ -210,7 +210,7 @@ func (w *Worker) fetchAndParseFlatWithRetry(ctx context.Context, href string, re
 			continue
 		}
 
-		info, err := cian.ParseFlatPage(body, href, region, w.logger)
+		info, err := cian.ParseFlatPage(body, href, region, dealType, w.logger)
 		if err != nil {
 			lastErr = err
 			w.logger.Warn("flat parse error", zap.String("href", href), zap.Int("try", try), zap.Error(err))

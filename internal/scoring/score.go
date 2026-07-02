@@ -129,16 +129,27 @@ var saleConstants = scoreConstants{
 
 const eps = 1e-5
 
+// flats_history.flat_score is a Postgres int4 column; clamp to its range so
+// a future data anomaly (bad price/commission extraction, etc.) degrades the
+// score instead of failing the DB insert and silently dropping the flat.
+const (
+	minFlatScore = math.MinInt32
+	maxFlatScore = math.MaxInt32
+)
+
 // CalculateFlatScore computes a composite desirability score for a flat,
 // using rent- or sale-calibrated constants depending on f.DealType.
 func CalculateFlatScore(f *model.FlatInfo) int {
+	var score float64
 	if f.DealType == "sale" {
-		return calculateScore(f, saleConstants)
+		score = calculateScore(f, saleConstants)
+	} else {
+		score = calculateScore(f, rentConstants)
 	}
-	return calculateScore(f, rentConstants)
+	return int(math.Min(maxFlatScore, math.Max(minFlatScore, score)))
 }
 
-func calculateScore(f *model.FlatInfo, c scoreConstants) int {
+func calculateScore(f *model.FlatInfo, c scoreConstants) float64 {
 	score := c.defaultScore
 	score -= c.depositMultiplier * float64(f.Deposit)
 	score += c.allAreaMultiplier * f.TotalArea
@@ -165,7 +176,7 @@ func calculateScore(f *model.FlatInfo, c scoreConstants) int {
 	score += bathroomScore(f, c)
 	score += math.Max(c.balconyMultiplier*float64(f.BalconyCount), c.loggiaMultiplier*float64(f.LoggiaCount))
 	score += c.undergroundScoreMult * (c.defaultUndergroundScore - f.UndergroundScore)
-	return int(score)
+	return score
 }
 
 func costScore(f *model.FlatInfo, c scoreConstants) float64 {

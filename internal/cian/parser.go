@@ -227,11 +227,14 @@ func parseDefaultState(valueRaw json.RawMessage, href string, region int, dealTy
 
 	// Comission represents the agent's percentage fee for both deal types,
 	// but CIAN structures it differently: a flat "agentFee" for rent vs a
-	// nested "agentBonus": {paymentType, value} object for sale.
+	// nested "agentBonus": {paymentType, value} object for sale, where value
+	// is only a percentage when paymentType is percentage-based — for a fixed
+	// fee it's an absolute ruble amount, which saleCommissionPercent converts
+	// back to a price-relative percentage.
 	comission := jsonInt(bargainTerms, "agentFee")
 	if dealType == "sale" {
 		agentBonus := nestedMap(bargainTerms, "agentBonus")
-		comission = jsonInt(agentBonus, "value")
+		comission = saleCommissionPercent(agentBonus, jsonInt(bargainTerms, "price"))
 	}
 
 	// The underground (metro) ranking data only covers Moscow; skip it for
@@ -290,6 +293,26 @@ func parseDefaultState(valueRaw json.RawMessage, href string, region int, dealTy
 	}
 	info.FlatScore = scoring.CalculateFlatScore(info)
 	return info, nil
+}
+
+// saleCommissionPercent returns a sale listing's agent commission as a
+// percentage of price, matching rent's agentFee semantic (calculateScore
+// multiplies comissionMultiplier * comission * price, so comission must be
+// percentage points, not rubles). CIAN's agentBonus.value is a percentage
+// when paymentType is percentage-based, but an absolute ruble amount for a
+// fixed fee — treating that as a raw percentage was overflowing FlatScore by
+// billions (e.g. a ~190,000₽ fixed fee read as "190000%"). Any non-percentage
+// paymentType is instead converted to its price-relative percentage.
+func saleCommissionPercent(agentBonus map[string]json.RawMessage, price int) int {
+	value := jsonInt(agentBonus, "value")
+	paymentType := jsonString(agentBonus, "paymentType")
+	if strings.EqualFold(paymentType, "percent") || strings.EqualFold(paymentType, "percentage") {
+		return value
+	}
+	if price <= 0 {
+		return 0
+	}
+	return value * 100 / price
 }
 
 // JSON navigation helpers

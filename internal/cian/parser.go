@@ -161,6 +161,12 @@ func ParseFlatPage(body, href string, region int, dealType string, logger *zap.L
 		logger.Warn("offer card line parse failed", zap.String("href", href), zap.Error(err))
 		return nil, err
 	}
+	logger.Debug("flat coordinates",
+		zap.String("href", href),
+		zap.Bool("found", info.Latitude != 0 || info.Longitude != 0),
+		zap.Float64("lat", info.Latitude),
+		zap.Float64("lon", info.Longitude),
+	)
 	logger.Info("flat page parsed",
 		zap.String("href", href),
 		zap.Int("price", info.Price),
@@ -224,6 +230,13 @@ func parseDefaultState(valueRaw json.RawMessage, href string, region int, dealTy
 		comission = saleCommissionPercent(agentBonus, jsonInt(bargainTerms, "price"))
 	}
 
+	// Coordinates are reported (when present) regardless of region, unlike
+	// the underground ranking below which only covers Moscow.
+	geo := nestedMap(offer, "geo")
+	coordinates := nestedMap(geo, "coordinates")
+	latitude := jsonFloat(coordinates, "lat")
+	longitude := jsonFloat(coordinates, "lng")
+
 	// The underground (metro) ranking data only covers Moscow; skip it for
 	// other regions instead of scoring against Moscow-only station data.
 	var undergroundScore float64
@@ -231,7 +244,6 @@ func parseDefaultState(valueRaw json.RawMessage, href string, region int, dealTy
 	var undergroundDistInfo string
 	var undergroundStations []string
 	if region == moscowRegionID {
-		geo := nestedMap(offer, "geo")
 		undergroundsRaw := jsonArray(geo, "undergrounds")
 		undergroundScore, undergroundPlace, undergroundDistInfo, undergroundStations = scoring.ParseUndergroundInfo(undergroundsRaw)
 	}
@@ -240,6 +252,8 @@ func parseDefaultState(valueRaw json.RawMessage, href string, region int, dealTy
 		Link:                     href,
 		Region:                   region,
 		DealType:                 dealType,
+		Latitude:                 latitude,
+		Longitude:                longitude,
 		Price:                    jsonInt(bargainTerms, "price"),
 		RoomNumber:               jsonInt(offer, "roomsCount"),
 		TotalArea:                jsonFloat(offer, "totalArea"),

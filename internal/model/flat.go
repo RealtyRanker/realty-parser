@@ -6,6 +6,8 @@ type FlatInfo struct {
 	DealType                 string
 	Price                    int
 	FlatScore                int
+	Latitude                 float64 // 0 if CIAN didn't report coordinates for this listing
+	Longitude                float64
 	UndergroundScore         float64
 	UndergroundPlace         int
 	UndergroundDistanceInfo  string

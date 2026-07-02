@@ -86,11 +86,11 @@ func (d *DB) InsertFlat(ctx context.Context, f *model.FlatInfo) error {
 			last_updated, ceiling_height,
 			building_entrances_number, building_apartments_number, building_elevators_number,
 			sale_type, mortgage_allowed, is_new_building, new_building_name,
-			is_by_homeowner, demolished_in_moscow_program
+			is_by_homeowner, demolished_in_moscow_program, latitude, longitude
 		) VALUES (
 			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
 			$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,
-			$34,$35,$36,$37,$38,$39,$40
+			$34,$35,$36,$37,$38,$39,$40,$41,$42
 		) ON CONFLICT (link) DO NOTHING`,
 		f.Link, f.Region, f.DealType, f.Price, f.FlatScore,
 		f.UndergroundScore, f.UndergroundPlace, f.UndergroundDistanceInfo, stations,
@@ -102,7 +102,7 @@ func (d *DB) InsertFlat(ctx context.Context, f *model.FlatInfo) error {
 		f.LastUpdated, f.CeilingHeight,
 		f.BuildingEntrancesNumber, f.BuildingApartmentsNumber, f.BuildingElevatorsNumber,
 		f.SaleType, f.MortgageAllowed, f.IsNewBuilding, f.NewBuildingName,
-		f.IsByHomeowner, f.DemolishedInMoscowProgram,
+		f.IsByHomeowner, f.DemolishedInMoscowProgram, f.Latitude, f.Longitude,
 	)
 	return err
 }

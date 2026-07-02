@@ -112,7 +112,6 @@ func (w *Worker) runSearch(ctx context.Context, region int, dealType string) int
 
 	for page := 1; parsed < cfg.OverallLimit && page <= cfg.PagesLimit; page++ {
 		searchURL := cian.BuildSearchURL(cfg, region, dealType, page)
-		w.logger.Debug("fetching search page", zap.Int("region", region), zap.String("deal_type", dealType), zap.String("url", searchURL))
 
 		body, err := w.fetchURL(ctx, searchURL, "https://www.cian.ru/")
 		if err != nil {
@@ -151,7 +150,6 @@ func (w *Worker) processFlat(ctx context.Context, href string, region int, dealT
 		return fmt.Errorf("db exists check: %w", err)
 	}
 	if exists {
-		w.logger.Debug("flat already in db", zap.String("href", href))
 		return nil
 	}
 
@@ -178,8 +176,6 @@ func (w *Worker) processFlat(ctx context.Context, href string, region int, dealT
 
 	if err := w.producer.PublishFlat(ctx, info); err != nil {
 		w.logger.Warn("kafka publish failed", zap.String("href", href), zap.Error(err))
-	} else {
-		w.logger.Debug("flat published to kafka", zap.String("href", href))
 	}
 
 	return nil

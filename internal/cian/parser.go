@@ -21,8 +21,6 @@ const moscowRegionID = 1
 // ParseSearchPageHrefs extracts flat listing URLs from a CIAN search results page.
 // Every other LinkArea node is skipped (mirrors original C++ logic).
 func ParseSearchPageHrefs(body string, logger *zap.Logger) ([]string, error) {
-	logger.Debug("search page received", zap.Int("body_bytes", len(body)))
-
 	// Quick sanity check — bot-wall or empty response
 	if len(body) < 1000 {
 		logger.Warn("search page body suspiciously small — possible bot block or redirect",
@@ -41,7 +39,6 @@ func ParseSearchPageHrefs(body string, logger *zap.Logger) ([]string, error) {
 
 	var linkAreaNodes []*html.Node
 	collectLinkAreaNodes(doc, &linkAreaNodes)
-	logger.Debug("LinkArea nodes found", zap.Int("count", len(linkAreaNodes)))
 
 	if len(linkAreaNodes) == 0 {
 		// Help diagnose a structure change: look for any data-name attrs present
@@ -55,19 +52,13 @@ func ParseSearchPageHrefs(body string, logger *zap.Logger) ([]string, error) {
 	var hrefs []string
 	for i, node := range linkAreaNodes {
 		if i%2 == 1 {
-			logger.Debug("skipping odd LinkArea node", zap.Int("index", i))
 			continue
 		}
-		href, classFound := extractHrefDebug(node)
+		href, _ := extractHrefDebug(node)
 		// Strip tracking query params — store only canonical flat URL
 		if q := strings.IndexByte(href, '?'); q != -1 {
 			href = href[:q]
 		}
-		logger.Debug("LinkArea node processed",
-			zap.Int("index", i),
-			zap.String("href", href),
-			zap.Bool("link_class_matched", classFound),
-		)
 		if href != "" {
 			hrefs = append(hrefs, href)
 		}
@@ -147,8 +138,6 @@ func extractHref(n *html.Node) string {
 
 // ParseFlatPage extracts FlatInfo from a CIAN flat detail page HTML body.
 func ParseFlatPage(body, href string, region int, dealType string, logger *zap.Logger) (*model.FlatInfo, error) {
-	logger.Debug("flat page received", zap.String("href", href), zap.Int("body_bytes", len(body)))
-
 	idx := strings.Index(body, "window._cianConfig['frontend-offer-card']")
 	if idx == -1 {
 		logger.Warn("offer card JS not found in flat page",
@@ -157,7 +146,6 @@ func ParseFlatPage(body, href string, region int, dealType string, logger *zap.L
 		)
 		return nil, fmt.Errorf("offer card data not found in page")
 	}
-	logger.Debug("offer card JS found", zap.String("href", href), zap.Int("offset", idx))
 
 	end := strings.IndexByte(body[idx:], '\n')
 	var line string
@@ -167,7 +155,6 @@ func ParseFlatPage(body, href string, region int, dealType string, logger *zap.L
 		line = body[idx : idx+end]
 	}
 	line = strings.TrimRight(line, "\r")
-	logger.Debug("offer card line extracted", zap.String("href", href), zap.Int("line_bytes", len(line)))
 
 	info, err := parseOfferCardLine(line, href, region, dealType)
 	if err != nil {

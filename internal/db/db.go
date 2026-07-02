@@ -69,10 +69,15 @@ func (d *DB) FlatExists(ctx context.Context, link string) (bool, error) {
 
 // InsertFlat writes a parsed flat into flats_history.
 func (d *DB) InsertFlat(ctx context.Context, f *model.FlatInfo) error {
+	stations := f.UndergroundStations
+	if stations == nil {
+		stations = []string{}
+	}
+
 	_, err := d.pool.Exec(ctx, `
 		INSERT INTO flats_history (
 			link, region, deal_type, price, flat_score,
-			underground_score, underground_place, underground_distance_info,
+			underground_score, underground_place, underground_distance_info, underground_stations,
 			room_number, total_area, living_area, kitchen_area,
 			floor, max_floor, deposit, deposit_months, comission,
 			renovation, is_apartments, loggia_count, balcony_count, windows_view,
@@ -85,10 +90,10 @@ func (d *DB) InsertFlat(ctx context.Context, f *model.FlatInfo) error {
 		) VALUES (
 			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
 			$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,
-			$34,$35,$36,$37,$38,$39
+			$34,$35,$36,$37,$38,$39,$40
 		) ON CONFLICT (link) DO NOTHING`,
 		f.Link, f.Region, f.DealType, f.Price, f.FlatScore,
-		f.UndergroundScore, f.UndergroundPlace, f.UndergroundDistanceInfo,
+		f.UndergroundScore, f.UndergroundPlace, f.UndergroundDistanceInfo, stations,
 		f.RoomNumber, f.TotalArea, f.LivingArea, f.KitchenArea,
 		f.Floor, f.MaxFloor, f.Deposit, f.DepositMonths, f.Comission,
 		f.Renovation, f.IsApartments, f.LoggiaCount, f.BalconyCount, f.WindowsView,

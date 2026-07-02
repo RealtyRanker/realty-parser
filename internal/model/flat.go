@@ -9,6 +9,7 @@ type FlatInfo struct {
 	UndergroundScore         float64
 	UndergroundPlace         int
 	UndergroundDistanceInfo  string
+	UndergroundStations      []string
 	RoomNumber               int
 	TotalArea                float64
 	LivingArea               float64

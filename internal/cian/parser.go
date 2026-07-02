@@ -239,10 +239,11 @@ func parseDefaultState(valueRaw json.RawMessage, href string, region int, dealTy
 	var undergroundScore float64
 	var undergroundPlace int
 	var undergroundDistInfo string
+	var undergroundStations []string
 	if region == moscowRegionID {
 		geo := nestedMap(offer, "geo")
 		undergroundsRaw := jsonArray(geo, "undergrounds")
-		undergroundScore, undergroundPlace, undergroundDistInfo = scoring.ParseUndergroundInfo(undergroundsRaw)
+		undergroundScore, undergroundPlace, undergroundDistInfo, undergroundStations = scoring.ParseUndergroundInfo(undergroundsRaw)
 	}
 
 	info := &model.FlatInfo{
@@ -278,6 +279,7 @@ func parseDefaultState(valueRaw json.RawMessage, href string, region int, dealTy
 		UndergroundScore:         undergroundScore,
 		UndergroundPlace:         undergroundPlace,
 		UndergroundDistanceInfo:  undergroundDistInfo,
+		UndergroundStations:      undergroundStations,
 
 		SaleType:                  jsonString(bargainTerms, "saleType"),
 		MortgageAllowed:           jsonBool(bargainTerms, "mortgageAllowed"),

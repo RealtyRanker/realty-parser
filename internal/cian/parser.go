@@ -138,7 +138,7 @@ func extractHref(n *html.Node) string {
 
 // ParseFlatPage extracts FlatInfo from a CIAN flat detail page HTML body.
 func ParseFlatPage(body, href string, region int, dealType string, logger *zap.Logger) (*model.FlatInfo, error) {
-	idx := strings.Index(body, "window._cianConfig['frontend-offer-card']")
+	idx := strings.Index(body, cianConfigPrefix)
 	if idx == -1 {
 		logger.Warn("offer card JS not found in flat page",
 			zap.String("href", href),
@@ -147,16 +147,9 @@ func ParseFlatPage(body, href string, region int, dealType string, logger *zap.L
 		return nil, fmt.Errorf("offer card data not found in page")
 	}
 
-	end := strings.IndexByte(body[idx:], '\n')
-	var line string
-	if end == -1 {
-		line = body[idx:]
-	} else {
-		line = body[idx : idx+end]
-	}
-	line = strings.TrimRight(line, "\r")
+	rest := body[idx+len(cianConfigPrefix):]
 
-	info, err := parseOfferCardLine(line, href, region, dealType)
+	info, err := parseOfferCardJSON(rest, href, region, dealType)
 	if err != nil {
 		logger.Warn("offer card line parse failed", zap.String("href", href), zap.Error(err))
 		return nil, err
@@ -177,15 +170,19 @@ func ParseFlatPage(body, href string, region int, dealType string, logger *zap.L
 	return info, nil
 }
 
-func parseOfferCardLine(line, href string, region int, dealType string) (*model.FlatInfo, error) {
-	if len(line) < len(cianConfigPrefix)+2 {
-		return nil, fmt.Errorf("offer card line too short (%d bytes)", len(line))
-	}
-	trimmed := line[:len(line)-2]
-	jsonStr := trimmed[len(cianConfigPrefix):]
-
+// parseOfferCardJSON decodes the offer-card JSON array that immediately
+// follows cianConfigPrefix in the page source. It uses a streaming
+// json.Decoder rather than json.Unmarshal because CIAN's markup packs
+// multiple <script> blocks onto a single physical line with no separator:
+// right after the array's closing "]" there's typically the ");" that
+// closes the surrounding .concat(...) call, immediately followed by more
+// HTML/JS with no newline in between. json.Unmarshal requires the entire
+// input to be a single valid JSON value and errors on that trailing
+// content; a Decoder stops as soon as it has read one complete value and
+// simply ignores whatever follows.
+func parseOfferCardJSON(rest, href string, region int, dealType string) (*model.FlatInfo, error) {
 	var items []json.RawMessage
-	if err := json.Unmarshal([]byte(jsonStr), &items); err != nil {
+	if err := json.NewDecoder(strings.NewReader(rest)).Decode(&items); err != nil {
 		return nil, fmt.Errorf("unmarshalling offer card array: %w", err)
 	}
 
@@ -213,6 +210,15 @@ func parseDefaultState(valueRaw json.RawMessage, href string, region int, dealTy
 	offer := nestedMap(offerData, "offer")
 	bti := nestedMap(offerData, "bti")
 	houseData := nestedMap(bti, "houseData")
+
+	return buildFlatInfo(offer, houseData, href, region, dealType), nil
+}
+
+// buildFlatInfo maps a CIAN offer object to FlatInfo. The same offer model is
+// embedded in both the flat page (full data, plus houseData from BTI) and the
+// search results page (a subset: no repair type, bathrooms, appliances, pet /
+// children rules, ceiling height or houseData — those stay zero-valued).
+func buildFlatInfo(offer, houseData map[string]json.RawMessage, href string, region int, dealType string) *model.FlatInfo {
 	bargainTerms := nestedMap(offer, "bargainTerms")
 	building := nestedMap(offer, "building")
 
@@ -237,6 +243,9 @@ func parseDefaultState(valueRaw json.RawMessage, href string, region int, dealTy
 	latitude := jsonFloat(coordinates, "lat")
 	longitude := jsonFloat(coordinates, "lng")
 
+	photoURLs, photoThumbnailURLs := parsePhotos(offer)
+	address := parseBuildingAddress(geo)
+
 	// The underground (metro) ranking data only covers Moscow; skip it for
 	// other regions instead of scoring against Moscow-only station data.
 	var undergroundScore float64
@@ -252,8 +261,11 @@ func parseDefaultState(valueRaw json.RawMessage, href string, region int, dealTy
 		Link:                     href,
 		Region:                   region,
 		DealType:                 dealType,
+		Address:                  address,
 		Latitude:                 latitude,
 		Longitude:                longitude,
+		PhotoURLs:                photoURLs,
+		PhotoThumbnailURLs:       photoThumbnailURLs,
 		Price:                    jsonInt(bargainTerms, "price"),
 		RoomNumber:               jsonInt(offer, "roomsCount"),
 		TotalArea:                jsonFloat(offer, "totalArea"),
@@ -275,7 +287,7 @@ func parseDefaultState(valueRaw json.RawMessage, href string, region int, dealTy
 		HasConditioner:           jsonBool(offer, "hasConditioner"),
 		ChildrenAllowed:          jsonBool(offer, "childrenAllowed"),
 		PetsAllowed:              jsonBool(offer, "petsAllowed"),
-		LastUpdated:              jsonString(offer, "humanizedEditDate"),
+		LastUpdated:              firstNonEmpty(jsonString(offer, "humanizedEditDate"), jsonString(offer, "humanizedTimedelta")),
 		CeilingHeight:            jsonFloat(building, "ceilingHeight"),
 		BuildingEntrancesNumber:  jsonInt(houseData, "entrances"),
 		BuildingApartmentsNumber: jsonInt(houseData, "flatCount"),
@@ -293,7 +305,35 @@ func parseDefaultState(valueRaw json.RawMessage, href string, region int, dealTy
 		DemolishedInMoscowProgram: jsonBool(offer, "demolishedInMoscowProgramm"),
 	}
 	info.FlatScore = scoring.CalculateFlatScore(info)
-	return info, nil
+	return info
+}
+
+// CIAN lists address components in display order. Keep the locality and house
+// number so addresses on streets with the same name can be distinguished.
+func parseBuildingAddress(geo map[string]json.RawMessage) string {
+	var parts []string
+	hasLocality := false
+	for _, raw := range jsonArray(geo, "address") {
+		var part struct {
+			Type string `json:"type"`
+			Name string `json:"name"`
+		}
+		if json.Unmarshal(raw, &part) != nil || strings.TrimSpace(part.Name) == "" {
+			continue
+		}
+		switch part.Type {
+		case "location", "locality", "city", "settlement":
+			hasLocality = true
+			parts = append(parts, part.Name)
+		case "street":
+			parts = append(parts, part.Name)
+		case "house":
+			if hasLocality && len(parts) >= 2 {
+				return strings.Join(append(parts, part.Name), ", ")
+			}
+		}
+	}
+	return ""
 }
 
 // saleCommissionPercent returns a sale listing's agent commission as a
@@ -317,6 +357,33 @@ func saleCommissionPercent(agentBonus map[string]json.RawMessage, price int) int
 }
 
 // JSON navigation helpers
+
+// maxPhotos caps how many photo URLs are stored per listing — CIAN listings
+// can have dozens of photos, and the app only ever shows a handful.
+const maxPhotos = 20
+
+// parsePhotos extracts photo URLs from offer.photos[], each entry shaped
+// like {"id":..., "isDefault":..., "fullUrl":"...", "thumbnailUrl":"...",
+// ...}. Both slices are index-aligned and CIAN CDN URLs are public, so the
+// app can load them directly without downloading/hosting the images itself.
+func parsePhotos(offer map[string]json.RawMessage) (fullURLs, thumbnailURLs []string) {
+	for _, raw := range jsonArray(offer, "photos") {
+		var photo map[string]json.RawMessage
+		if json.Unmarshal(raw, &photo) != nil {
+			continue
+		}
+		full := jsonString(photo, "fullUrl")
+		if full == "" {
+			continue
+		}
+		fullURLs = append(fullURLs, full)
+		thumbnailURLs = append(thumbnailURLs, jsonString(photo, "thumbnailUrl"))
+		if len(fullURLs) >= maxPhotos {
+			break
+		}
+	}
+	return fullURLs, thumbnailURLs
+}
 
 func nestedMap(m map[string]json.RawMessage, key string) map[string]json.RawMessage {
 	if m == nil {
@@ -415,4 +482,13 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

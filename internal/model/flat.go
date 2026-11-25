@@ -6,8 +6,11 @@ type FlatInfo struct {
 	DealType                 string
 	Price                    int
 	FlatScore                int
-	Latitude                 float64 // 0 if CIAN didn't report coordinates for this listing
+	Address                  string  `json:",omitempty"`
+	Latitude                 float64 // 0 if the platform didn't report coordinates
 	Longitude                float64
+	PhotoURLs                []string // full-size photos, from offer.photos[].fullUrl
+	PhotoThumbnailURLs       []string // matching thumbnails, from offer.photos[].thumbnailUrl
 	UndergroundScore         float64
 	UndergroundPlace         int
 	UndergroundDistanceInfo  string

@@ -20,6 +20,7 @@ docker run -d \
   --name "$APP_CONTAINER" \
   --network "$NETWORK" \
   --restart unless-stopped \
+  -v "realtyranker_sqlitedata:/data" \
   -p 9095:9095 \
   -v "$(pwd)/config.yaml:/app/config.yaml:ro" \
   -v "$LOG_DIR:/var/log/realty-parser" \

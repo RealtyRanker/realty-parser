@@ -9,17 +9,23 @@ search:
   limit: 100
   overall_limit: 30
 
+yandex:
+  enabled: false
+  regions:
+    1: 587795  # Москва
+
 worker:
-  period_seconds: 5
+  period_seconds: 120
   request_timeout_ms: 5000
-  sleep_before_request_ms: 2000
-  retry_sleep_ms: 5000
+  sleep_before_request_ms: 8000
+  retry_sleep_ms: 30000
   retry_sleep_multiplier: 1.5
-  max_retries: 5
-  cookie_header: ""
+  max_retries: 3
+  cookie_header: "_ga=GA1.1.1340949569.1746032453; _CIAN_GK=fd1d1748-1843-40b8-8097-f20bdc4f1f07; uxfb_usertype=searcher; tmr_lvid=013d0eef6efc8849e02fb32a13f2999c; tmr_lvidTS=1746032453038; _ym_uid=174603245359424079; _ym_d=1782907964; uxs_uid=2ab6f570-7546-11f1-afad-2311d48c3332; cookie_agreement_accepted=1; _gcl_au=1.1.1647193515.1793789985; login_mro_popup=1; domain_sid=8iZ7yMpgNT1z5B-QQrzst%3A1793789988823; sopr_utm=%7B%22utm_source%22%3A+%22direct%22%2C+%22utm_medium%22%3A+%22None%22%7D; sopr_session=86b2ff5360ca4433; _ym_isad=2; DMIR_AUTH=IHIksqYJ73gkEl3w9aG30Io8%2BK%2BhKcNd%2F%2BFDUX9XlL05DiPUR5zfo2ko%2FNQOBp0QEnqVrivcgdmCW19IZT47%2Bz50VDpOwlhTsj4ND3%2BsOMF3E5dJXQiQ3XfthKD4dEN1TphI9hnFP5jRJvElmCldLnU5Mwd2Cb3yP9Y2EiMY3%2FeaFqKXhyC%2Bbc%2B3ASaSw6z%2B; _yasc=knYlf0DtASzOyK4+9qCODqphvoN1135/etNd+9efUdh9uV3IRkri6wVY3EIsHHq9COgtpg==; cian_ruid=101243445; cookieUserID=101243445; tmr_detect=0%7C1793790082039; uxfb_card_satisfaction=%5B335872077%5D; _ga_3369S417EL=GS2.1.s1793789989$o12$g1$t1793790175$j60$l0$h0; entry_src=bare_domain"
+  detail_source: "search"   # данные только с выдачи; страницы квартир с хоста отдают капчу
 
 database:
-  dsn: "postgres://realty_parser:password@realty-postgres:5432/realty_parser?sslmode=disable"
+  dsn: "file:/data/realtyranker.db?mode=rw"
 
 logging:
   file_path: "/var/log/realty-parser/app.log"
@@ -27,8 +33,3 @@ logging:
 
 metrics:
   port: 9095
-
-kafka:
-  brokers:
-    - "realty-kafka:9092"
-  topic: "realty.flats"

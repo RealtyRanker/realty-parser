@@ -2,8 +2,10 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/url"
 	"strings"
 	"time"
@@ -16,17 +18,25 @@ import (
 	"github.com/asmisnik/realty-parser/internal/cian"
 	"github.com/asmisnik/realty-parser/internal/config"
 	"github.com/asmisnik/realty-parser/internal/db"
-	"github.com/asmisnik/realty-parser/internal/kafka"
 	"github.com/asmisnik/realty-parser/internal/metrics"
 	"github.com/asmisnik/realty-parser/internal/model"
+	"github.com/asmisnik/realty-parser/internal/yandex"
 )
 
+// errCaptcha means CIAN served its captcha page instead of the requested one. The run is
+// aborted (no retries) so we back off until the next period instead of hammering the site.
+var errCaptcha = errors.New("CIAN returned a captcha page")
+
+func isCaptcha(body string) bool {
+	return strings.Contains(body, "<title>Captcha")
+}
+
 type Worker struct {
-	cfg      *config.Config
-	db       *db.DB
-	logger   *zap.Logger
-	client   tls_client.HttpClient
-	producer *kafka.Producer
+	cfg    *config.Config
+	db     *db.DB
+	logger *zap.Logger
+	client tls_client.HttpClient
+	yandex *yandex.Client
 }
 
 func New(cfg *config.Config, database *db.DB, logger *zap.Logger) *Worker {
@@ -44,27 +54,31 @@ func New(cfg *config.Config, database *db.DB, logger *zap.Logger) *Worker {
 		tls_client.WithCookieJar(jar),
 	)
 
-	return &Worker{
-		cfg:      cfg,
-		db:       database,
-		logger:   logger,
-		client:   client,
-		producer: kafka.NewProducer(cfg.Kafka.Brokers, cfg.Kafka.Topic),
+	w := &Worker{
+		cfg:    cfg,
+		db:     database,
+		logger: logger,
+		client: client,
 	}
+	if cfg.Yandex.Enabled {
+		w.yandex = yandex.New(time.Duration(cfg.Worker.RequestTimeoutMs) * time.Millisecond)
+	}
+	return w
 }
 
 // Start runs the worker loop until ctx is cancelled. It executes immediately on start,
-// then repeats every cfg.Worker.PeriodSeconds.
+// then repeats roughly every cfg.Worker.PeriodSeconds (±20% jitter, so requests to CIAN
+// don't arrive on a fixed clock).
 func (w *Worker) Start(ctx context.Context) {
 	w.runOnce(ctx)
 
-	ticker := time.NewTicker(time.Duration(w.cfg.Worker.PeriodSeconds) * time.Second)
-	defer ticker.Stop()
 	for {
+		period := time.Duration(w.cfg.Worker.PeriodSeconds) * time.Second
+		wait := time.Duration(float64(period) * (0.8 + 0.4*rand.Float64()))
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-time.After(wait):
 			w.runOnce(ctx)
 		}
 	}
@@ -103,6 +117,9 @@ func (w *Worker) doRun(ctx context.Context) int {
 	for _, combo := range combos {
 		parsed += w.runSearch(ctx, combo.Region, combo.DealType)
 	}
+	if w.yandex != nil && ctx.Err() == nil {
+		parsed += w.runYandex(ctx, combos)
+	}
 	return parsed
 }
 
@@ -121,6 +138,11 @@ func (w *Worker) runSearch(ctx context.Context, region int, dealType string) int
 		}
 		metrics.PagesFetched.Inc()
 
+		if w.cfg.Worker.DetailSource == "search" {
+			parsed += w.processSearchOffers(ctx, body, region, dealType, page, cfg.OverallLimit-parsed)
+			continue
+		}
+
 		hrefs, err := cian.ParseSearchPageHrefs(body, w.logger)
 		if err != nil {
 			w.logger.Error("search page parse failed", zap.Int("region", region), zap.String("deal_type", dealType), zap.Int("page", page), zap.Error(err))
@@ -135,6 +157,11 @@ func (w *Worker) runSearch(ctx context.Context, region int, dealType string) int
 				break
 			}
 			if err := w.processFlat(ctx, href, region, dealType); err != nil {
+				if errors.Is(err, errCaptcha) {
+					w.logger.Warn("captcha on flat page — aborting this run, will retry next period", zap.String("href", href))
+					metrics.ParseErrors.Inc()
+					return parsed
+				}
 				w.logger.Warn("skipping flat", zap.String("href", href), zap.Error(err))
 				continue
 			}
@@ -142,6 +169,43 @@ func (w *Worker) runSearch(ctx context.Context, region int, dealType string) int
 		}
 	}
 	return parsed
+}
+
+// processSearchOffers stores listings parsed directly from a search results page and
+// returns how many new flats were inserted (at most limit).
+func (w *Worker) processSearchOffers(ctx context.Context, body string, region int, dealType string, page, limit int) int {
+	flats, err := cian.ParseSearchPageOffers(body, region, dealType, w.logger)
+	if err != nil {
+		w.logger.Error("search page offers parse failed", zap.Int("region", region), zap.String("deal_type", dealType), zap.Int("page", page), zap.Error(err))
+		metrics.ParseErrors.Inc()
+		return 0
+	}
+	w.logger.Info("found flats on search page", zap.Int("region", region), zap.String("deal_type", dealType), zap.Int("page", page), zap.Int("count", len(flats)))
+	metrics.FlatsFound.Add(float64(len(flats)))
+
+	inserted := 0
+	for _, info := range flats {
+		if inserted >= limit {
+			break
+		}
+		exists, err := w.db.FlatExists(ctx, info.Link)
+		if err != nil {
+			w.logger.Warn("db exists check failed", zap.String("href", info.Link), zap.Error(err))
+			continue
+		}
+		if exists {
+			continue
+		}
+		stored, err := w.storeAndPublish(ctx, info)
+		if err != nil {
+			w.logger.Warn("skipping flat", zap.String("href", info.Link), zap.Error(err))
+			continue
+		}
+		if stored {
+			inserted++
+		}
+	}
+	return inserted
 }
 
 func (w *Worker) processFlat(ctx context.Context, href string, region int, dealType string) error {
@@ -159,8 +223,18 @@ func (w *Worker) processFlat(ctx context.Context, href string, region int, dealT
 		return err
 	}
 
-	if err := w.db.InsertFlat(ctx, info); err != nil {
-		return fmt.Errorf("db insert: %w", err)
+	_, err = w.storeAndPublish(ctx, info)
+	return err
+}
+
+func (w *Worker) storeAndPublish(ctx context.Context, info *model.FlatInfo) (bool, error) {
+	href := info.Link
+	inserted, err := w.db.InsertFlatAndEnqueue(ctx, info)
+	if err != nil {
+		return false, fmt.Errorf("db insert: %w", err)
+	}
+	if !inserted {
+		return false, nil
 	}
 
 	metrics.FlatsInserted.Inc()
@@ -174,11 +248,7 @@ func (w *Worker) processFlat(ctx context.Context, href string, region int, dealT
 		zap.Float64("area", info.TotalArea),
 	)
 
-	if err := w.producer.PublishFlat(ctx, info); err != nil {
-		w.logger.Warn("kafka publish failed", zap.String("href", href), zap.Error(err))
-	}
-
-	return nil
+	return true, nil
 }
 
 func (w *Worker) fetchAndParseFlatWithRetry(ctx context.Context, href string, region int, dealType string) (*model.FlatInfo, error) {
@@ -199,6 +269,9 @@ func (w *Worker) fetchAndParseFlatWithRetry(ctx context.Context, href string, re
 			metrics.FetchErrors.Inc()
 			w.logger.Warn("flat fetch error", zap.String("href", href), zap.Int("try", try), zap.Error(err))
 			continue
+		}
+		if isCaptcha(body) {
+			return nil, errCaptcha
 		}
 		if strings.Contains(body, "rate_limit") {
 			lastErr = fmt.Errorf("rate limited")

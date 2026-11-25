@@ -26,10 +26,18 @@ type WorkerConfig struct {
 	RetrySleepMultiplier float64 `yaml:"retry_sleep_multiplier"`
 	MaxRetries           int     `yaml:"max_retries"`
 	CookieHeader         string  `yaml:"cookie_header"`
+	// DetailSource: "flat" (default) — fetch every flat page; "search" — take listings
+	// straight from the search results page (no per-flat requests, fewer fields).
+	DetailSource string `yaml:"detail_source"`
 }
 
 type DatabaseConfig struct {
 	DSN string `yaml:"dsn"`
+}
+
+type YandexConfig struct {
+	Enabled bool        `yaml:"enabled"`
+	Regions map[int]int `yaml:"regions"` // RealtyRanker region ID -> Yandex Realty rgid
 }
 
 type LoggingConfig struct {
@@ -41,18 +49,13 @@ type MetricsConfig struct {
 	Port int `yaml:"port"`
 }
 
-type KafkaConfig struct {
-	Brokers []string `yaml:"brokers"`
-	Topic   string   `yaml:"topic"`
-}
-
 type Config struct {
 	Search   SearchConfig   `yaml:"search"`
+	Yandex   YandexConfig   `yaml:"yandex"`
 	Worker   WorkerConfig   `yaml:"worker"`
 	Database DatabaseConfig `yaml:"database"`
 	Logging  LoggingConfig  `yaml:"logging"`
 	Metrics  MetricsConfig  `yaml:"metrics"`
-	Kafka    KafkaConfig    `yaml:"kafka"`
 }
 
 func Load(path string) (*Config, error) {

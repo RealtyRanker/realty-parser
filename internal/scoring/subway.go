@@ -126,7 +126,7 @@ const (
 	additionalStationMultiplier = 2.0
 )
 
-type undergroundStation struct {
+type UndergroundStation struct {
 	Name       string `json:"name"`
 	TravelTime int    `json:"travelTime"`
 	TravelType string `json:"travelType"`
@@ -135,17 +135,22 @@ type undergroundStation struct {
 // ParseUndergroundInfo computes the best underground score, station place, distance description,
 // and the list of station names from a slice of raw JSON station objects returned by the CIAN API.
 func ParseUndergroundInfo(stationsRaw []json.RawMessage) (score float64, place int, distInfo string, stations []string) {
+	parsed := make([]UndergroundStation, 0, len(stationsRaw))
+	for _, raw := range stationsRaw {
+		var station UndergroundStation
+		if json.Unmarshal(raw, &station) == nil {
+			parsed = append(parsed, station)
+		}
+	}
+	return ScoreUnderground(parsed)
+}
+
+func ScoreUnderground(input []UndergroundStation) (score float64, place int, distInfo string, stations []string) {
 	bestScore := undefinedScore
 	bestPlace := undefinedPlace
 	var info string
-	count := 0
 
-	for _, raw := range stationsRaw {
-		var station undergroundStation
-		if err := json.Unmarshal(raw, &station); err != nil {
-			continue
-		}
-		count++
+	for _, station := range input {
 		stations = append(stations, station.Name)
 
 		stationScore := undefinedScore
@@ -174,8 +179,8 @@ func ParseUndergroundInfo(stationsRaw []json.RawMessage) (score float64, place i
 		}
 	}
 
-	if count > 1 {
-		bestScore -= float64(count-1) * additionalStationMultiplier
+	if len(input) > 1 {
+		bestScore -= float64(len(input)-1) * additionalStationMultiplier
 	}
 
 	return bestScore, bestPlace, info, stations

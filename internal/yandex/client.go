@@ -118,25 +118,9 @@ func (c *Client) Search(ctx context.Context, filters config.SearchConfig, region
 	}
 	result := flats[:0]
 	for _, f := range flats {
-		if matchesFilters(f, filters) {
+		if filters.MatchesFlat(f) {
 			result = append(result, f)
 		}
 	}
 	return result, nil
-}
-
-func matchesFilters(f *model.FlatInfo, cfg config.SearchConfig) bool {
-	if f.Price < cfg.MinPrice || (cfg.MaxPrice > 0 && f.Price > cfg.MaxPrice) ||
-		f.TotalArea < float64(cfg.MinArea) || (cfg.MaxArea > 0 && f.TotalArea > float64(cfg.MaxArea)) {
-		return false
-	}
-	if len(cfg.Rooms) == 0 {
-		return true
-	}
-	for _, room := range cfg.Rooms {
-		if (room <= 5 && f.RoomNumber == room-1) || (room == 6 && f.RoomNumber >= 5) {
-			return true
-		}
-	}
-	return false
 }

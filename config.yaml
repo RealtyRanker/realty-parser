@@ -10,9 +10,14 @@ search:
   overall_limit: 30
 
 yandex:
-  enabled: false
+  enabled: false  # Прямой HTTP-адаптер. Chrome-сбор запускается отдельно.
   regions:
     1: 587795  # Москва
+
+domclick:
+  enabled: false  # Прямые HTTP-запросы. Браузерный импорт запускается отдельно.
+  regions:
+    1: {address: "1d1463ae-c80f-4d19-9331-a1b68a85b553", aid: 2299}  # Москва
 
 worker:
   period_seconds: 120

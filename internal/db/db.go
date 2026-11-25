@@ -74,6 +74,15 @@ func (d *DB) InsertFlat(ctx context.Context, f *model.FlatInfo) error {
 // InsertFlatAndEnqueue commits the listing and notification event atomically.
 // A duplicate listing neither produces a second event nor increments metrics.
 func (d *DB) InsertFlatAndEnqueue(ctx context.Context, f *model.FlatInfo) (bool, error) {
+	return d.insertFlat(ctx, f, true)
+}
+
+// InsertCatalogFlat records a listing or its alias without creating a notification event.
+func (d *DB) InsertCatalogFlat(ctx context.Context, f *model.FlatInfo) (bool, error) {
+	return d.insertFlat(ctx, f, false)
+}
+
+func (d *DB) insertFlat(ctx context.Context, f *model.FlatInfo, enqueue bool) (bool, error) {
 	payload, err := json.Marshal(f)
 	if err != nil {
 		return false, err
@@ -156,8 +165,10 @@ func (d *DB) InsertFlatAndEnqueue(ctx context.Context, f *model.FlatInfo) (bool,
 	if err != nil {
 		return false, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO flat_events (flat_id, payload) VALUES (?1, ?2)`, id, string(payload)); err != nil {
-		return false, err
+	if enqueue {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO flat_events (flat_id, payload) VALUES (?1, ?2)`, id, string(payload)); err != nil {
+			return false, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return false, err

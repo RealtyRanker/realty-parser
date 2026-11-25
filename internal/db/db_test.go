@@ -54,3 +54,22 @@ func TestListingAndEventAreAtomicAndDurable(t *testing.T) {
 		t.Fatalf("listing survived rolled back event: %v, %v", exists, err)
 	}
 }
+
+func TestCatalogImportDoesNotEnqueue(t *testing.T) {
+	database, _ := testDB(t)
+	ctx := context.Background()
+	flat := &model.FlatInfo{Link: "https://realty.yandex.ru/offer/123/", Region: 1, DealType: "rent", Price: 55000, TotalArea: 37.9}
+	if inserted, err := database.InsertCatalogFlat(ctx, flat); err != nil || !inserted {
+		t.Fatalf("insert: %v, %v", inserted, err)
+	}
+	if inserted, err := database.InsertCatalogFlat(ctx, flat); err != nil || inserted {
+		t.Fatalf("duplicate: %v, %v", inserted, err)
+	}
+	if exists, err := database.FlatExists(ctx, flat.Link); err != nil || !exists {
+		t.Fatalf("listing exists: %v, %v", exists, err)
+	}
+	var count int
+	if err := database.pool.QueryRowContext(ctx, `SELECT count(*) FROM flat_events`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("catalog import events: %d, %v", count, err)
+	}
+}

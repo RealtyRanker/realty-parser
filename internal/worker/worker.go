@@ -18,6 +18,7 @@ import (
 	"github.com/asmisnik/realty-parser/internal/cian"
 	"github.com/asmisnik/realty-parser/internal/config"
 	"github.com/asmisnik/realty-parser/internal/db"
+	"github.com/asmisnik/realty-parser/internal/domclick"
 	"github.com/asmisnik/realty-parser/internal/metrics"
 	"github.com/asmisnik/realty-parser/internal/model"
 	"github.com/asmisnik/realty-parser/internal/yandex"
@@ -32,11 +33,12 @@ func isCaptcha(body string) bool {
 }
 
 type Worker struct {
-	cfg    *config.Config
-	db     *db.DB
-	logger *zap.Logger
-	client tls_client.HttpClient
-	yandex *yandex.Client
+	cfg      *config.Config
+	db       *db.DB
+	logger   *zap.Logger
+	client   tls_client.HttpClient
+	yandex   *yandex.Client
+	domclick *domclick.Client
 }
 
 func New(cfg *config.Config, database *db.DB, logger *zap.Logger) *Worker {
@@ -62,6 +64,9 @@ func New(cfg *config.Config, database *db.DB, logger *zap.Logger) *Worker {
 	}
 	if cfg.Yandex.Enabled {
 		w.yandex = yandex.New(time.Duration(cfg.Worker.RequestTimeoutMs) * time.Millisecond)
+	}
+	if cfg.Domclick.Enabled {
+		w.domclick = domclick.New(time.Duration(cfg.Worker.RequestTimeoutMs) * time.Millisecond)
 	}
 	return w
 }
@@ -119,6 +124,9 @@ func (w *Worker) doRun(ctx context.Context) int {
 	}
 	if w.yandex != nil && ctx.Err() == nil {
 		parsed += w.runYandex(ctx, combos)
+	}
+	if w.domclick != nil && ctx.Err() == nil {
+		parsed += w.runDomclick(ctx)
 	}
 	return parsed
 }

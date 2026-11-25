@@ -25,6 +25,8 @@ func platform(link string) string {
 		return "cian"
 	case host == "realty.yandex.ru" || host == "realty.ya.ru":
 		return "yandex"
+	case host == "domclick.ru" || strings.HasSuffix(host, ".domclick.ru"):
+		return "domclick"
 	default:
 		return ""
 	}

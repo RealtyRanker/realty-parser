@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 
+	"github.com/asmisnik/realty-parser/internal/model"
 	"gopkg.in/yaml.v3"
 )
 
@@ -16,6 +17,22 @@ type SearchConfig struct {
 	PagesLimit   int    `yaml:"pages_limit"`
 	Limit        int    `yaml:"limit"`
 	OverallLimit int    `yaml:"overall_limit"`
+}
+
+func (cfg SearchConfig) MatchesFlat(f *model.FlatInfo) bool {
+	if f.Price < cfg.MinPrice || (cfg.MaxPrice > 0 && f.Price > cfg.MaxPrice) ||
+		f.TotalArea < float64(cfg.MinArea) || (cfg.MaxArea > 0 && f.TotalArea > float64(cfg.MaxArea)) {
+		return false
+	}
+	if len(cfg.Rooms) == 0 {
+		return true
+	}
+	for _, room := range cfg.Rooms {
+		if (room <= 5 && f.RoomNumber == room-1) || (room == 6 && f.RoomNumber >= 5) {
+			return true
+		}
+	}
+	return false
 }
 
 type WorkerConfig struct {
@@ -40,6 +57,16 @@ type YandexConfig struct {
 	Regions map[int]int `yaml:"regions"` // RealtyRanker region ID -> Yandex Realty rgid
 }
 
+type DomclickRegion struct {
+	Address string `yaml:"address"`
+	AID     int    `yaml:"aid"`
+}
+
+type DomclickConfig struct {
+	Enabled bool                   `yaml:"enabled"`
+	Regions map[int]DomclickRegion `yaml:"regions"`
+}
+
 type LoggingConfig struct {
 	FilePath string `yaml:"file_path"`
 	Level    string `yaml:"level"`
@@ -52,6 +79,7 @@ type MetricsConfig struct {
 type Config struct {
 	Search   SearchConfig   `yaml:"search"`
 	Yandex   YandexConfig   `yaml:"yandex"`
+	Domclick DomclickConfig `yaml:"domclick"`
 	Worker   WorkerConfig   `yaml:"worker"`
 	Database DatabaseConfig `yaml:"database"`
 	Logging  LoggingConfig  `yaml:"logging"`
